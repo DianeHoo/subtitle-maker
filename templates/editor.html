@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --canvas-bg: #fafaf5;
+  --card-bg: #ffffff;
+  --text: #2e342d;
+  --text-dim: rgba(46, 52, 45, 0.58);
+  --text-muted: rgba(46, 52, 45, 0.3);
+  --text-ghost: rgba(46, 52, 45, 0.2);
+  --sage: #526347;
+  --sage-interactive: rgba(82, 99, 71, 0.82);
+  --card-shadow: 0 1px 4px rgba(46, 52, 45, 0.05);
+  --font-display: 'Manrope', sans-serif;
+  --font-body: 'Plus Jakarta Sans', sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 56px 24px 96px;
+  background: var(--canvas-bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.container {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.header {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 28px;
+  letter-spacing: -0.01em;
+  margin-bottom: 48px;
+  text-align: center;
+}
+
+.hint {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-family: var(--font-display);
+  text-align: right;
+  margin-bottom: 8px;
+  letter-spacing: 0.01em;
+}
+
+.hint kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  background: rgba(46, 52, 45, 0.06);
+  border-radius: 4px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 0 2px;
+}
+
+.toolbar {
+  display: flex;
+  gap: 10px;
+  margin-top: 40px;
+  margin-bottom: 10px;
+  justify-content: center;
+}
+
+.btn {
+  background: none;
+  border: 1px solid rgba(82, 99, 71, 0.3);
+  color: var(--sage-interactive);
+  padding: 10px 22px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  letter-spacing: 0.01em;
+}
+
+.btn:hover {
+  background: var(--sage);
+  color: white;
+  border-color: var(--sage);
+}
+
+.btn.primary {
+  background: var(--sage);
+  color: white;
+  border-color: var(--sage);
+}
+
+.btn.primary:hover {
+  background: #3f4f37;
+  border-color: #3f4f37;
+}
+
+.btn.done {
+  cursor: default;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 7px;
+  gap: 14px;
+}
+
+.row-num {
+  flex-shrink: 0;
+  width: 22px;
+  text-align: right;
+  color: var(--text-muted);
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 500;
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.row-card {
+  flex: 1;
+  background: var(--card-bg);
+  border-radius: 10px;
+  padding: 8px 16px;
+  box-shadow: var(--card-shadow);
+  outline: none;
+  min-height: 20px;
+  font-size: 14px;
+  color: var(--text);
+  caret-color: var(--sage);
+  border: 1px solid transparent;
+  transition: border-color 0.15s;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.row-card:focus {
+  border-color: rgba(82, 99, 71, 0.35);
+}
+
+.row-card:empty::before {
+  content: 'press \232B to merge with previous';
+  color: var(--text-ghost);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.footer {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+  font-family: var(--font-display);
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header" id="title">__TITLE__</div>
+  <div class="hint"><kbd>Enter</kbd> split at cursor &middot; <kbd>&#9003;</kbd> at line start merges up</div>
+  <div id="rows"></div>
+  <div class="toolbar">
+    <button id="copy-btn" class="btn primary" onclick="copyToClipboard()">Finish</button>
+  </div>
+  <div class="footer">Copies to clipboard. Paste into Claude to finish.</div>
+</div>
+
+<script>
+const SAMPLE = __SAMPLE_JSON__;
+
+const rowsEl = document.getElementById('rows');
+
+function createRow(text) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  const num = document.createElement('div');
+  num.className = 'row-num';
+  const card = document.createElement('div');
+  card.className = 'row-card';
+  card.contentEditable = 'true';
+  card.spellcheck = false;
+  card.textContent = text;
+  card.addEventListener('keydown', onKeyDown);
+  card.addEventListener('blur', onBlur);
+  card.addEventListener('input', onInput);
+  row.appendChild(num);
+  row.appendChild(card);
+  return row;
+}
+
+// ---- Undo / Redo -----------------------------------------------------------
+const undoStack = [];
+const redoStack = [];
+const MAX_UNDO = 100;
+const COALESCE_MS = 800;
+let lastTypingSnap = 0;
+
+function snapshot() {
+  const cards = Array.from(rowsEl.querySelectorAll('.row-card'));
+  const active = document.activeElement;
+  const focusedIndex = cards.indexOf(active);
+  const caretOffset = focusedIndex >= 0 ? getCursorTextOffset(active) : 0;
+  return {
+    rows: cards.map(function (c) { return c.textContent; }),
+    focusedIndex: focusedIndex,
+    caretOffset: caretOffset,
+  };
+}
+
+function pushUndo(options) {
+  options = options || {};
+  const snap = snapshot();
+  undoStack.push(snap);
+  if (undoStack.length > MAX_UNDO) undoStack.shift();
+  if (!options.keepRedo) redoStack.length = 0;
+}
+
+function pushUndoCoalesced() {
+  const now = Date.now();
+  if (now - lastTypingSnap < COALESCE_MS && undoStack.length > 0) {
+    // within coalesce window; extend last snapshot's window without pushing
+    return;
+  }
+  pushUndo();
+  lastTypingSnap = now;
+}
+
+function restore(snap) {
+  rowsEl.innerHTML = '';
+  snap.rows.forEach(function (t) { rowsEl.appendChild(createRow(t)); });
+  renumber();
+  if (snap.focusedIndex >= 0) {
+    const cards = rowsEl.querySelectorAll('.row-card');
+    const target = cards[snap.focusedIndex];
+    if (target) setCaret(target, snap.caretOffset);
+  }
+}
+
+function undo() {
+  if (undoStack.length === 0) return false;
+  redoStack.push(snapshot());
+  const snap = undoStack.pop();
+  restore(snap);
+  lastTypingSnap = 0;
+  return true;
+}
+
+function redo() {
+  if (redoStack.length === 0) return false;
+  undoStack.push(snapshot());
+  const snap = redoStack.pop();
+  restore(snap);
+  lastTypingSnap = 0;
+  return true;
+}
+
+function onInput(e) {
+  pushUndoCoalesced();
+}
+
+document.addEventListener('keydown', function (e) {
+  const mod = e.metaKey || e.ctrlKey;
+  if (!mod) return;
+  const key = e.key.toLowerCase();
+  const isUndo = key === 'z' && !e.shiftKey;
+  const isRedo = (key === 'z' && e.shiftKey) || key === 'y';
+  if (isUndo) {
+    e.preventDefault();
+    undo();
+  } else if (isRedo) {
+    e.preventDefault();
+    redo();
+  }
+});
+
+function onBlur(e) {
+  const card = e.currentTarget;
+  if (card.textContent.trim() === '' && rowsEl.querySelectorAll('.row-card').length > 1) {
+    pushUndo();
+    card.parentElement.remove();
+    renumber();
+  }
+}
+
+function renumber() {
+  const nums = rowsEl.querySelectorAll('.row-num');
+  nums.forEach((el, i) => el.textContent = i + 1);
+}
+
+function setCaret(el, offset) {
+  el.focus();
+  const sel = window.getSelection();
+  const r = document.createRange();
+  const node = el.firstChild || el;
+  const maxOff = (node.nodeType === 3 ? node.length : 0);
+  r.setStart(node, Math.min(offset, maxOff));
+  r.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(r);
+}
+
+function getCursorTextOffset(card) {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return 0;
+  const range = sel.getRangeAt(0);
+  const pre = document.createRange();
+  pre.selectNodeContents(card);
+  pre.setEnd(range.startContainer, range.startOffset);
+  return pre.toString().length;
+}
+
+function onKeyDown(e) {
+  const card = e.currentTarget;
+
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    pushUndo();
+    const text = card.textContent;
+    const pos = getCursorTextOffset(card);
+    const before = text.slice(0, pos);
+    const after = text.slice(pos);
+    card.textContent = before;
+    const thisRow = card.parentElement;
+    const newRow = createRow(after);
+    thisRow.parentNode.insertBefore(newRow, thisRow.nextSibling);
+    renumber();
+    setCaret(newRow.querySelector('.row-card'), 0);
+    lastTypingSnap = 0;
+    return;
+  }
+
+  if (e.key === 'Backspace') {
+    const sel = window.getSelection();
+    if (!sel.isCollapsed) return;
+    const pos = getCursorTextOffset(card);
+    if (pos === 0) {
+      e.preventDefault();
+      const thisRow = card.parentElement;
+      const prevRow = thisRow.previousElementSibling;
+      if (!prevRow) return;
+      pushUndo();
+      const prevCard = prevRow.querySelector('.row-card');
+      const prevLen = prevCard.textContent.length;
+      prevCard.textContent = prevCard.textContent + card.textContent;
+      thisRow.remove();
+      renumber();
+      setCaret(prevCard, prevLen);
+      lastTypingSnap = 0;
+    }
+  }
+
+  if (e.key === 'ArrowUp') {
+    const sel = window.getSelection();
+    if (!sel.isCollapsed) return;
+    const pos = getCursorTextOffset(card);
+    if (pos === 0) {
+      e.preventDefault();
+      const prevRow = card.parentElement.previousElementSibling;
+      if (prevRow) {
+        const prevCard = prevRow.querySelector('.row-card');
+        setCaret(prevCard, prevCard.textContent.length);
+      }
+    }
+  }
+
+  if (e.key === 'ArrowDown') {
+    const sel = window.getSelection();
+    if (!sel.isCollapsed) return;
+    const pos = getCursorTextOffset(card);
+    if (pos === card.textContent.length) {
+      e.preventDefault();
+      const nextRow = card.parentElement.nextElementSibling;
+      if (nextRow) {
+        const nextCard = nextRow.querySelector('.row-card');
+        setCaret(nextCard, 0);
+      }
+    }
+  }
+}
+
+function buildDraftText() {
+  const cards = rowsEl.querySelectorAll('.row-card');
+  const lines = [
+    "# Subtitle draft from subtitle-maker skill.",
+    "# Paste this whole block back into Claude to build the final SRT.",
+    "",
+  ];
+  cards.forEach((card, i) => {
+    const text = card.textContent.trim();
+    if (text) lines.push(String(i + 1).padStart(3) + '  ' + text);
+  });
+  return lines.join('\n') + '\n';
+}
+
+function flashButton() {
+  const btn = document.getElementById('copy-btn');
+  const original = btn.dataset.label || btn.textContent;
+  btn.dataset.label = original;
+  btn.textContent = 'Copied';
+  btn.classList.add('done');
+  clearTimeout(flashButton._t);
+  flashButton._t = setTimeout(function () {
+    btn.textContent = btn.dataset.label;
+    btn.classList.remove('done');
+  }, 1800);
+}
+
+async function copyToClipboard() {
+  const text = buildDraftText();
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (err) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  }
+  flashButton();
+}
+
+SAMPLE.forEach(function (text) { rowsEl.appendChild(createRow(text)); });
+renumber();
+
+const firstCard = rowsEl.querySelector('.row-card');
+if (firstCard) firstCard.focus();
+</script>
+</body>
+</html>
